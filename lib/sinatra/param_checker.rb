@@ -2,8 +2,8 @@ require 'sinatra/base'
 
 module Sinatra
   module ParamChecker
-    Boolean = :boolean.freeze
-    UUID = :uuid.freeze
+    Boolean = Class.new
+    UUID = Class.new
     class InvalidParameterError < StandardError
       attr_accessor :param, :options
     end
@@ -25,55 +25,27 @@ module Sinatra
         @params << param
       end
 
-      def coerce(value, type, options = {})
-        return nil if value.nil?
-        return value if value.is_a?(type)
-        return Integer(value) if type == Integer
-        return Float(value) if type == Float
-        return String(value) if type == String
-        return String(value) if type == UUID
-        return value if (type == File && value.is_a?(Rack::Multipart::UploadedFile))
-        return Date.parse(value) if type == Date
-        return Time.parse(value) if type == Time
-        return DateTime.parse(value) if type == DateTime
-        if type == Array
-          return Array(value.split(options[:delimiter] || ','))
-        end
-        if type == Hash
-          return Hash[value.split(options[:delimiter] || ',').map { |c| c.split(options[:separator] || ':', 2) }]
-        end
-
-        if [TrueClass, FalseClass, Boolean].include?(type)
-          if /(false|f|no|n|0)$/i === value.to_s
-            false
-          elsif /(true|t|yes|y|1)$/i === value.to_s
-            true
-          else
-            raise "cannot coerce #{value.to_s} to Boolean"
-          end
-        end
-        nil
-      rescue
-        raise InvalidParameterError, "#{type} expected"
-      end
-
       def validate!(thiz)
         @params.each do |e|
           type, name, opts = e
           begin
-            thiz.params[name] = coerce(thiz.params[name], opts[:type], opts)
-            # check exist
-            if this.params[name].nil?
+            # handle default
+            v = if this.params[name].nil?
               case type
               when :optional
-                this.params[name] =
-                  (opts[:default].call if opts[:default].respond_to?(:call)) || opts[:default]
+                (opts[:default].call if opts[:default].respond_to?(:call)) || opts[:default]
               when :required
                 raise InvalidParameterError, "param #{name} not found"
               end
+            else
+              this.params[name]
             end
-            next if thiz.params[name].nil?
-            validate(thiz.params[name], opts)
+
+            next if v.nil?
+
+            coerced_value = coerce(v, opts[:type], opts)
+            validate(coerced_value, opts)
+            thiz.params[name] = coerced_value
           rescue InvalidParameterError => e
             e.param, e.options = name, opts
             raise e
@@ -83,24 +55,84 @@ module Sinatra
 
       private
 
-      def validate(v, opts)
-        # check value
-        case opts[:type].to_s.to_sym
-        when :String
-          # allow empty string
-          # raise InvalidParameterError, 'blank string' if v.strip.size == 0
-          raise InvalidParameterError, 'wrong format' if opts[:regexp] && !(v =~ opts[:regexp])
+      def coerce(value, type, options = {})
+        return value if value.is_a?(type)
+        case type
+        when Integer
+          Integer(value)
+        when Float
+          Float(value)
+        when String
+          String(value)
         when UUID
-          raise InvalidParameterError, 'uuid expected' unless v =~ /\A[a-f0-9]{32}\z/
-        when :Integer, :Float
-          raise InvalidParameterError, "not in range(#{opts[:range]})" if opts[:type] == Integer && opts[:range] && !opts[:range].include?(v)
-          raise InvalidParameterError, "greater than #{opts[:max]}" if opts[:max] && v > opts[:max]
-          raise InvalidParameterError, "smaller than #{opts[:min]}" if opts[:min] && v < opts[:min]
-        when :File
+          String(value)
+        when File
+          if value.is_a?(Rack::Multipart::UploadedFile)
+            value
+          else
+            raise "cannot coerce value to #{type}"
+          end
+        when Date
+          Date.parse(value)
+        when Time
+          Time.parse(value)
+        when DateTime
+          Time.parse(value)
+        when Array
+          delimiter = options[:delimiter] || ','
+          Array(value.split(delimiter))
+        when Hash
+          delimiter = options[:delimiter] || ','
+          separator = options[:separator] || ':'
+          value.split(delimiter).map do |c|
+            c.split(separator, 2)
+          end.to_h
+        when TrueClass, FalseClass, Boolean
+          if /(false|f|no|n|0)$/i === value.to_s
+            false
+          elsif /(true|t|yes|y|1)$/i === value.to_s
+            true
+          else
+            raise "cannot coerce value to Boolean"
+          end
+        else
+          raise "cannot coerce value to #{type}"
+        end
+      rescue => _e
+        raise InvalidParameterError, "#{type} expected"
+      end
+
+
+      def validate(v, opts)
+        case opts[:type]
+        when ::String
+          if opts[:regexp] && !(v =~ opts[:regexp])
+            raise InvalidParameterError, 'wrong format'
+          end
+        when UUID
+          unless v =~ /\A[a-f0-9]{32}\z/
+            raise InvalidParameterError, 'uuid expected'
+          end
+        when ::Integer, ::Float
+          if opts[:type] == Integer && opts[:range] && !opts[:range].include?(v)
+            raise InvalidParameterError, "not in range(#{opts[:range]})"
+          end
+          if opts[:max] && v > opts[:max]
+            raise InvalidParameterError, "greater than #{opts[:max]}"
+          end
+          if opts[:min] && v < opts[:min]
+            raise InvalidParameterError, "smaller than #{opts[:min]}"
+          end
+        when ::File
           tf = v[:tempfile] rescue nil
           raise InvalidParameterError, 'File expected' unless Tempfile === tf
         end
-        raise InvalidParameterError, 'invalid enumeration member' if opts[:values] && !opts[:values].include?(v)
+
+        unless [Hash, Array, File].include?(opts[:type])
+          if opts[:values] && !opts[:values].include?(v)
+            raise InvalidParameterError, 'invalid enumeration member'
+          end
+        end
       end
 
       def syntax_err(msg)
@@ -117,7 +149,12 @@ module Sinatra
       OPTIONS = [:type, :default, :values, :min, :max, :range, :regexp, :delimiter, :separator]
       def validate_opts!(param)
         type, name, opts = param
+
         syntax_err "#{name}: missing option :type" unless opts[:type]
+        unless opts[:type].is_a?(Class)
+          syntax_err "#{name}: :type value should be class"
+        end
+
         prefix = "#{name}(#{opts[:type]})"
         opts.each do |k, v|
           syntax_err "#{prefix}: unsupported option :#{k}" unless OPTIONS.include?(k)
