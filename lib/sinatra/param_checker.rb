@@ -8,6 +8,7 @@ module Sinatra
       attr_accessor :param, :options
     end
     class ParamScope
+      attr_reader :params
       def initialize
         @params = []
       end
@@ -107,7 +108,7 @@ module Sinatra
       end
 
       def check_type(type, value)
-        return String == value if type == UUID
+        return value.is_a?(String) if type == UUID
         return [true, false].include?(value) if [TrueClass, FalseClass, Boolean].include?(type)
         return true if (value.is_a?(type) rescue false)
         false
