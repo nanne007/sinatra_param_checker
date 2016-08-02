@@ -26,7 +26,7 @@ module Sinatra
       end
 
       def validate!(params)
-        @params.each do |e|
+        validated_params = @params.reduce({}) do |memo, e|
           type, name, opts = e
           begin
             # handle default
@@ -41,15 +41,22 @@ module Sinatra
               params[name]
             end
 
-            next if v.nil?
-
-            coerced_value = coerce(v, opts[:type], opts)
-            validate(coerced_value, opts)
-            params[name] = coerced_value
+            unless v.nil?
+              coerced_value = coerce(v, opts[:type], opts)
+              validate(coerced_value, opts)
+              memo[name] = coerced_value
+            end
+            memo
           rescue InvalidParameterError => e
             e.param, e.options = name, opts
             raise e
           end
+        end
+
+        validated_params.reduce(params) do |memo, pair|
+          k, v = pair
+          memo[k] = v
+          memo
         end
       end
 
@@ -67,7 +74,7 @@ module Sinatra
         when :UUID
           String(value)
         when :File
-          if value.is_a?(Rack::Multipart::UploadedFile)
+          if value.is_a?(Hash) && value[:tempfile].is_a?(::Tempfile)
             value
           else
             raise "cannot coerce value to #{type}"

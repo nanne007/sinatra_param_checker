@@ -144,5 +144,87 @@ module Sinatra
         assert e.message =~ /:separator can be used only with :type Hash/
       end
     end
+
+
+    def test_validate_default
+      p = params {
+        optional 'fake', type: String, default: 'fake'
+      }
+      assert_equal({'fake' => 'fake'}, p.validate!({}))
+
+      p = params {
+        optional 'fake', type: String
+      }
+
+      assert_equal({}, p.validate!({}))
+    end
+
+    def test_validate_min_max
+      p = params {
+        required 'number', type: Float, min: 10.0, max: 100.0
+      }
+
+      assert_equal({'number' => 12}, p.validate!({'number' => 12}))
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 9})
+      end
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 101})
+      end
+    end
+
+    def test_validate_range
+      p = params {
+        required 'number', type: Integer, range: 10..100
+      }
+
+      assert_equal({'number' => 12}, p.validate!({'number' => 12}))
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 9})
+      end
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 101})
+      end
+    end
+
+    def test_validate_values
+      p = params {
+        required 'number', type: Integer, values: [2, 4, 8, 16]
+      }
+
+      assert_equal({'number' => 2}, p.validate!({'number' => 2}))
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 3})
+      end
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'number' => 11})
+      end
+    end
+
+    def test_validate_regexp
+      p = params {
+        required 'id', type: String, regexp: /^\d{5,10}$/
+      }
+
+      assert_equal({'id' => '123456'}, p.validate!({'id' => '123456'}))
+
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'id' => '12345678901'})
+      end
+      assert_raises Sinatra::ParamChecker::InvalidParameterError do
+        p.validate!({'id' => '1234'})
+      end
+    end
+
+    def test_validate_file
+      p = params {
+        required 'file', type: File
+      }
+
+      h = {
+        'file' => {tempfile: Tempfile.new('fake')}
+      }
+      assert_equal h, p.validate!(h)
+    end
   end
 end
