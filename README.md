@@ -25,7 +25,7 @@ Or install it yourself as:
 
 ## Usage
 
-```
+``` ruby
 require 'sinatra/base'
 class Example < Sinatra::Base
   register Sinatra::ParamChecker
