@@ -25,12 +25,12 @@ module Sinatra
         @params << param
       end
 
-      def validate!(thiz)
+      def validate!(params)
         @params.each do |e|
           type, name, opts = e
           begin
             # handle default
-            v = if this.params[name].nil?
+            v = if params[name].nil?
               case type
               when :optional
                 (opts[:default].call if opts[:default].respond_to?(:call)) || opts[:default]
@@ -38,14 +38,14 @@ module Sinatra
                 raise InvalidParameterError, "param #{name} not found"
               end
             else
-              this.params[name]
+              params[name]
             end
 
             next if v.nil?
 
             coerced_value = coerce(v, opts[:type], opts)
             validate(coerced_value, opts)
-            thiz.params[name] = coerced_value
+            params[name] = coerced_value
           rescue InvalidParameterError => e
             e.param, e.options = name, opts
             raise e
@@ -57,37 +57,37 @@ module Sinatra
 
       def coerce(value, type, options = {})
         return value if value.is_a?(type)
-        case type
-        when Integer
+        case type.name.split('::').last.to_sym
+        when :Integer
           Integer(value)
-        when Float
+        when :Float
           Float(value)
-        when String
+        when :String
           String(value)
-        when UUID
+        when :UUID
           String(value)
-        when File
+        when :File
           if value.is_a?(Rack::Multipart::UploadedFile)
             value
           else
             raise "cannot coerce value to #{type}"
           end
-        when Date
+        when :Date
           Date.parse(value)
-        when Time
+        when :Time
           Time.parse(value)
-        when DateTime
-          Time.parse(value)
-        when Array
+        when :DateTime
+          DateTime.parse(value)
+        when :Array
           delimiter = options[:delimiter] || ','
           Array(value.split(delimiter))
-        when Hash
+        when :Hash
           delimiter = options[:delimiter] || ','
           separator = options[:separator] || ':'
           value.split(delimiter).map do |c|
             c.split(separator, 2)
           end.to_h
-        when TrueClass, FalseClass, Boolean
+        when :TrueClass, :FalseClass, :Boolean
           if /(false|f|no|n|0)$/i === value.to_s
             false
           elsif /(true|t|yes|y|1)$/i === value.to_s
@@ -104,16 +104,16 @@ module Sinatra
 
 
       def validate(v, opts)
-        case opts[:type]
-        when ::String
+        case opts[:type].name.split('::').last.to_sym
+        when :String
           if opts[:regexp] && !(v =~ opts[:regexp])
             raise InvalidParameterError, 'wrong format'
           end
-        when UUID
+        when :UUID
           unless v =~ /\A[a-f0-9]{32}\z/
             raise InvalidParameterError, 'uuid expected'
           end
-        when ::Integer, ::Float
+        when :Integer, :Float
           if opts[:type] == Integer && opts[:range] && !opts[:range].include?(v)
             raise InvalidParameterError, "not in range(#{opts[:range]})"
           end
@@ -123,7 +123,7 @@ module Sinatra
           if opts[:min] && v < opts[:min]
             raise InvalidParameterError, "smaller than #{opts[:min]}"
           end
-        when ::File
+        when :File
           tf = v[:tempfile] rescue nil
           raise InvalidParameterError, 'File expected' unless Tempfile === tf
         end
@@ -225,7 +225,7 @@ module Sinatra
       end
       before path, options do
         if methods.include?(self.request.request_method.downcase.to_sym)
-          ps.validate!(self)
+          ps.validate!(self.params)
         end
       end
     end
