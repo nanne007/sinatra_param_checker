@@ -44,6 +44,33 @@ class Example < Sinatra::Base
 end
 ```
 
+## Supported Options
+
+``` ruby
+OPTIONS = [:type, :default, :values, :min, :max, :range, :regexp, :delimiter, :separator]
+```
+
+- every param validation should contain a `:type` option.
+- `:default` option can only be used with `optional`.
+- `:values` cannot be used with `[Array, Hash, File]`.
+- `:min, :max` can only be used with `[Integer, Float]`.
+- `:range` can only be used with `Integer`.
+- `:regexp` can only be used with `String`.
+- `:delimiter` can only be used with `[Array, Hash]`.
+- `:separator` can only be used with `Hash`.
+
+Supported Types:
+
+- TrueClass, FalseClass, ParamChecker::Boolean
+- Integer, Float
+- String ,ParamChecker::UUID(32)
+- Date, Time, DateTime
+- File
+- Array, Hash
+
+If you has more demands, ping me by issues or pull requests!
+
+
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
